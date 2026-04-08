@@ -1,69 +1,350 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>羽毛球队伍抽签</title>
+  <link rel="icon" href="data:," />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .draw-anim { animation: roll 0.2s ease-in-out infinite; }
-    @keyframes roll { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    .draw-anim { animation: roll 0.18s ease-in-out infinite; }
+    .card-pop { animation: pop .35s ease-out both; }
+    @keyframes roll { 0% { transform: scale(1); } 50% { transform: scale(1.03); } 100% { transform: scale(1); } }
+    @keyframes pop { 0% { opacity: 0; transform: translateY(10px) scale(.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
   </style>
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800">
   <div id="app" class="max-w-6xl mx-auto p-4 md:p-6"></div>
 
   <script>
-    let state = JSON.parse(localStorage.getItem('bd_data')) || {
+    const DEFAULT_STATE = {
       event: "羽毛球赛",
-      tiers: { A: ["","","","","","","",""], B: ["","","","","","","",""], C: ["","","","","","","",""], D: ["","","","","","","",""], E: ["","","","","","","",""] },
-      fixedPairs: [] 
+      admin: { username: "admin", password: "admin123" },
+      tiers: {
+        A: ["张三", "李四", "王五", "赵六", "钱七", "孙八", "周九", "吴十"],
+        B: ["甲一", "甲二", "甲三", "甲四", "甲五", "甲六", "甲七", "甲八"],
+        C: ["乙一", "乙二", "乙三", "乙四", "乙五", "乙六", "乙七", "乙八"],
+        D: ["丙一", "丙二", "丙三", "丙四", "丙五", "丙六", "丙七", "丙八"],
+        E: ["丁一", "丁二", "丁三", "丁四", "丁五", "丁六", "丁七", "丁八"]
+      },
+      fixedPairs: []
     };
+
+    function safeParse(raw) {
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+
+    function normalizeTierValue(value, fallback) {
+      if (Array.isArray(value)) {
+        return value.map(v => String(v ?? '').trim()).filter(Boolean);
+      }
+      if (typeof value === 'string') {
+        return value.split(',').map(v => v.trim()).filter(Boolean);
+      }
+      return [...fallback];
+    }
+
+    function normalizeFixedPairs(value) {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map(item => {
+          if (Array.isArray(item)) return { members: item.map(v => String(v ?? '').trim()).filter(Boolean) };
+          if (item && Array.isArray(item.members)) return { members: item.members.map(v => String(v ?? '').trim()).filter(Boolean) };
+          if (typeof item === 'string') return { members: item.split(',').map(v => v.trim()).filter(Boolean) };
+          return { members: [] };
+        })
+        .filter(item => item.members.length >= 2);
+    }
+
+    function normalizeState(raw) {
+      const src = raw && typeof raw === 'object' ? raw : {};
+      const tiersSrc = src.tiers && typeof src.tiers === 'object' ? src.tiers : {};
+      return {
+        event: typeof src.event === 'string' && src.event.trim() ? src.event.trim() : DEFAULT_STATE.event,
+        admin: {
+          username: src.admin && typeof src.admin.username === 'string' && src.admin.username.trim() ? src.admin.username.trim() : DEFAULT_STATE.admin.username,
+          password: src.admin && typeof src.admin.password === 'string' && src.admin.password.trim() ? src.admin.password : DEFAULT_STATE.admin.password,
+        },
+        tiers: {
+          A: normalizeTierValue(tiersSrc.A, DEFAULT_STATE.tiers.A),
+          B: normalizeTierValue(tiersSrc.B, DEFAULT_STATE.tiers.B),
+          C: normalizeTierValue(tiersSrc.C, DEFAULT_STATE.tiers.C),
+          D: normalizeTierValue(tiersSrc.D, DEFAULT_STATE.tiers.D),
+          E: normalizeTierValue(tiersSrc.E, DEFAULT_STATE.tiers.E),
+        },
+        fixedPairs: normalizeFixedPairs(src.fixedPairs)
+      };
+    }
+
+    let state = normalizeState(safeParse(localStorage.getItem('bd_data')));
     let currentView = 'home';
 
-    function save() { localStorage.setItem('bd_data', JSON.stringify(state)); }
+    function save() {
+      localStorage.setItem('bd_data', JSON.stringify(state));
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
 
     function render() {
       const app = document.getElementById('app');
       app.innerHTML = '';
-      if(currentView === 'home') renderHome(app);
-      else if(currentView === 'login') renderLogin(app);
-      else if(currentView === 'admin') renderAdmin(app);
+      if (currentView === 'home') renderHome(app);
+      if (currentView === 'login') renderLogin(app);
+      if (currentView === 'admin') renderAdmin(app);
     }
 
     function renderHome(app) {
       app.innerHTML = `
-        <header class="text-center mb-8"><h1 class="text-3xl font-extrabold text-slate-900">${state.event}</h1><button onclick="currentView='login';render()" class="text-xs text-slate-400 mt-2">管理员后台</button></header>
-        <button id="drawBtn" onclick="startDraw()" class="w-full max-w-lg mx-auto block py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xl font-bold shadow-xl transition active:scale-95">🎲 开始抽签</button>
-        <div id="result" class="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        <header class="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">🏸 ${escapeHtml(state.event)}</h1>
+            <p class="text-slate-500 mt-2">支持手机和电脑，管理员可配置名单与固定队友</p>
+          </div>
+          <button onclick="currentView='login';render()" class="self-start sm:self-auto text-sm bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 px-4 py-2 rounded-xl shadow-sm transition">管理员后台</button>
+        </header>
+
+        <section class="bg-white rounded-3xl shadow-sm border border-slate-200 p-5 md:p-6 mb-6">
+          <div class="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
+            <div>
+              <div class="text-sm text-slate-500">当前配置</div>
+              <div class="text-lg font-semibold mt-1">A-E 共 ${Object.values(state.tiers).reduce((a, b) => a + b.length, 0)} 人，固定组 ${state.fixedPairs.length} 组</div>
+            </div>
+            <button id="drawBtn" onclick="startDraw()" class="w-full lg:w-auto py-4 px-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-lg font-bold shadow-xl transition active:scale-95">🎲 开始抽签</button>
+          </div>
+        </section>
+
+        <section id="result" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"></section>
       `;
+      renderPlaceholder();
+    }
+
+    function renderPlaceholder() {
+      const result = document.getElementById('result');
+      result.innerHTML = Array.from({ length: 8 }, (_, i) => `
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm min-h-[180px]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-slate-800">第 ${i + 1} 队</h3>
+            <span class="text-xs text-slate-400">待抽签</span>
+          </div>
+          <div class="space-y-2">
+            ${Array.from({ length: 5 }, () => '<div class="h-9 rounded-xl bg-slate-100"></div>').join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
     }
 
     function startDraw() {
-      const btn = document.getElementById('drawBtn'), res = document.getElementById('result');
-      btn.classList.add('draw-anim'); btn.innerText = "🎲 抽签运算中...";
-      setTimeout(() => {
-        let teams = Array.from({length: 8}, () => []), used = new Set();
-        state.fixedPairs.forEach((pair, i) => {
-          pair.members.forEach(m => { if(m && m.trim()) { teams[i%8].push(m); used.add(m.trim()); }});
-        });
-        Object.keys(state.tiers).forEach(t => {
-          state.tiers[t].filter(m => m && m.trim() && !used.has(m.trim())).sort(() => Math.random() - 0.5)
-          .forEach((m, i) => { teams[(i + teams.reduce((acc,curr)=>acc+curr.length,0)) % 8].push(m); });
-        });
-        res.innerHTML = teams.map((t, i) => `<div class="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100"><h3 class="font-bold text-indigo-600 mb-3 border-b pb-2">第 ${i+1} 队</h3>${t.map(p => `<div class="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm mb-1">${p}</div>`).join('')}</div>`).join('');
-        btn.classList.remove('draw-anim'); btn.innerText = "🎲 开始抽签";
-      }, 1500);
+      const btn = document.getElementById('drawBtn');
+      const result = document.getElementById('result');
+      btn.disabled = true;
+      btn.classList.add('draw-anim');
+      btn.innerText = '🎲 抽签中...';
+
+      let ticks = 0;
+      const timer = setInterval(() => {
+        result.innerHTML = Array.from({ length: 8 }, (_, i) => `
+          <div class="bg-white rounded-2xl border border-indigo-100 p-4 shadow-sm min-h-[180px]">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-indigo-600">第 ${i + 1} 队</h3>
+              <span class="text-xs text-indigo-400">抽签中</span>
+            </div>
+            <div class="space-y-2">
+              ${Array.from({ length: 5 }, () => `<div class="h-9 rounded-xl bg-indigo-50 ${ticks % 2 ? 'opacity-60' : ''}"></div>`).join('')}
+            </div>
+          </div>
+        `).join('');
+        ticks++;
+        if (ticks >= 10) {
+          clearInterval(timer);
+          const teams = buildTeams();
+          renderTeams(teams);
+          btn.disabled = false;
+          btn.classList.remove('draw-anim');
+          btn.innerText = '🎲 重新抽签';
+        }
+      }, 140);
     }
 
-    function renderLogin(app) { app.innerHTML = '<div class="max-w-xs mx-auto mt-20 p-6 bg-white rounded-xl shadow"><input id="pass" type="password" class="border p-2 w-full mb-4 rounded" placeholder="请输入密码"><button onclick="if(document.getElementById(\'pass\').value===\'admin123\'){currentView=\'admin\';render()}else{alert(\'密码错误\')}" class="w-full bg-indigo-600 text-white py-2 rounded">登录</button></div>'; }
+    function buildTeams() {
+      const teams = Array.from({ length: 8 }, () => []);
+      const used = new Set();
+      const tierByName = {};
+
+      Object.entries(state.tiers).forEach(([tier, members]) => {
+        members.forEach(name => {
+          if (name) tierByName[name] = tier;
+        });
+      });
+
+      state.fixedPairs.forEach((group, index) => {
+        const teamIndex = index % 8;
+        const tierUsedInGroup = new Set();
+        group.members.forEach(name => {
+          const tier = tierByName[name];
+          if (!name || used.has(name) || !tier) return;
+          if (tierUsedInGroup.has(tier)) return;
+          teams[teamIndex].push(name);
+          used.add(name);
+          tierUsedInGroup.add(tier);
+        });
+      });
+
+      Object.entries(state.tiers).forEach(([tier, members]) => {
+        const remaining = shuffle(members.filter(name => name && !used.has(name)));
+        for (let i = 0; i < remaining.length; i++) {
+          const name = remaining[i];
+          const candidate = [];
+          for (let t = 0; t < 8; t++) {
+            const team = teams[t];
+            const hasTier = team.some(member => tierByName[member] === tier);
+            if (!hasTier) candidate.push(t);
+          }
+          const teamIndex = candidate.length ? candidate.sort((a, b) => teams[a].length - teams[b].length)[0] : teams.map((team, idx) => ({ idx, len: team.length })).sort((a, b) => a.len - b.len)[0].idx;
+          teams[teamIndex].push(name);
+          used.add(name);
+        }
+      });
+
+      return teams;
+    }
+
+    function renderTeams(teams) {
+      const result = document.getElementById('result');
+      result.innerHTML = teams.map((team, i) => `
+        <div class="bg-white rounded-2xl border border-indigo-100 p-4 shadow-sm card-pop min-h-[180px]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-indigo-600 text-lg">第 ${i + 1} 队</h3>
+            <span class="text-xs text-slate-400">${team.length} 人</span>
+          </div>
+          <div class="space-y-2">
+            ${team.length ? team.map(name => `<div class="bg-indigo-50 text-indigo-700 px-3 py-2 rounded-xl text-sm font-medium">${escapeHtml(name)}</div>`).join('') : '<div class="text-sm text-slate-400">暂无成员</div>'}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderLogin(app) {
+      app.innerHTML = `
+        <div class="max-w-md mx-auto mt-10 md:mt-20 bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
+          <h2 class="text-2xl font-bold text-slate-900 mb-2">管理员登录</h2>
+          <p class="text-slate-500 text-sm mb-6">登录后可配置 A-E 梯队名单和固定组队规则</p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-2">用户名</label>
+              <input id="username" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-4 py-3" placeholder="请输入用户名" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-2">密码</label>
+              <input id="password" type="password" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-4 py-3" placeholder="请输入密码" />
+            </div>
+            <div class="flex gap-3 pt-2">
+              <button onclick="currentView='home';render()" class="flex-1 bg-slate-100 hover:bg-slate-200 rounded-xl py-3 font-medium transition">返回</button>
+              <button onclick="login()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-3 font-medium transition">登录</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function login() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      if (username === state.admin.username && password === state.admin.password) {
+        currentView = 'admin';
+        render();
+      } else {
+        alert('用户名或密码错误');
+      }
+    }
 
     function renderAdmin(app) {
-      let tiersHtml = Object.keys(state.tiers).map(t => `<div class="mb-3"><label class="block text-xs font-bold text-slate-500">梯队 ${t}</label><input value="${state.tiers[t].join(',')}" onchange="state.tiers['${t}']=this.value.split(',').map(s=>s.trim())" class="w-full border p-2 text-sm rounded"></div>`).join('');
-      app.innerHTML = `<div class="max-w-2xl mx-auto bg-white p-6 rounded-xl shadow"><h2 class="font-bold mb-4">管理配置</h2>${tiersHtml}<label class="block text-xs font-bold text-slate-500 mt-4">固定组合 (每行一组,人名用逗号分)</label><textarea id="fixed" class="w-full border p-2 h-20 text-sm mb-4 rounded">${state.fixedPairs.map(p=>p.members.join(',')).join('\n')}</textarea><button onclick="saveAdmin()" class="w-full bg-green-600 text-white py-2 rounded">保存并回到首页</button></div>`;
+      const fixedText = (Array.isArray(state.fixedPairs) ? state.fixedPairs : [])
+        .map(group => Array.isArray(group.members) ? group.members.join(',') : '')
+        .filter(Boolean)
+        .join('\n');
+
+      const tiersHtml = ['A', 'B', 'C', 'D', 'E'].map(tier => `
+        <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+          <label class="block text-sm font-bold text-slate-700 mb-2">梯队 ${tier}</label>
+          <textarea id="tier-${tier}" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-3 py-3 text-sm min-h-[96px]" placeholder="多个名字用逗号分隔">${escapeHtml((state.tiers[tier] || []).join(','))}</textarea>
+          <p class="text-xs text-slate-400 mt-2">示例：张三,李四,王五</p>
+        </div>
+      `).join('');
+
+      app.innerHTML = `
+        <div class="flex items-center justify-between mb-6 gap-3">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900">管理员后台</h2>
+            <p class="text-slate-500 text-sm mt-1">配置名单和固定组后，首页抽签立即生效</p>
+          </div>
+          <button onclick="currentView='home';render()" class="bg-white border border-slate-200 hover:border-indigo-300 rounded-xl px-4 py-2 text-sm shadow-sm">返回首页</button>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <section class="xl:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-200 p-5 md:p-6">
+            <h3 class="text-lg font-bold mb-4">人员配置</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              ${tiersHtml}
+            </div>
+          </section>
+
+          <section class="bg-white rounded-3xl shadow-sm border border-slate-200 p-5 md:p-6">
+            <h3 class="text-lg font-bold mb-4">固定组队</h3>
+            <textarea id="fixed" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-3 py-3 text-sm min-h-[260px]" placeholder="每行一组，组内人名用逗号分隔\n例如：\n张三,甲一\n李四,乙二,丙三">${escapeHtml(fixedText)}</textarea>
+            <p class="text-xs text-slate-400 mt-3 leading-5">规则：每行是一组固定队友；如果同组里出现同一梯队多人，系统会自动忽略重复梯队的后续成员，避免冲突。</p>
+            <div class="grid grid-cols-2 gap-3 mt-5">
+              <button onclick="resetState()" class="bg-slate-100 hover:bg-slate-200 rounded-xl py-3 text-sm font-medium">恢复默认</button>
+              <button onclick="saveAdmin()" class="bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 text-sm font-medium">保存配置</button>
+            </div>
+          </section>
+        </div>
+      `;
     }
 
-    function saveAdmin() { state.fixedPairs = document.getElementById('fixed').value.split('\n').filter(l=>l.trim()).map(l=>({members: l.split(',').map(s=>s.trim())})); save(); currentView='home'; render(); }
+    function saveAdmin() {
+      const nextTiers = {};
+      ['A', 'B', 'C', 'D', 'E'].forEach(tier => {
+        const el = document.getElementById(`tier-${tier}`);
+        nextTiers[tier] = (el?.value || '').split(',').map(v => v.trim()).filter(Boolean);
+      });
+
+      const fixedRaw = document.getElementById('fixed')?.value || '';
+      state = normalizeState({
+        ...state,
+        tiers: nextTiers,
+        fixedPairs: fixedRaw.split('\n').map(line => line.trim()).filter(Boolean)
+      });
+      save();
+      alert('已保存');
+      currentView = 'home';
+      render();
+    }
+
+    function resetState() {
+      if (!confirm('确定恢复默认配置吗？')) return;
+      state = normalizeState(DEFAULT_STATE);
+      save();
+      render();
+    }
+
+    save();
     render();
   </script>
 </body>
