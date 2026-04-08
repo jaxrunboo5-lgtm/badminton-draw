@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <title>羽毛球队伍抽签</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .draw-anim { animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app" class="max-w-4xl mx-auto p-4"></div>
@@ -11,56 +15,78 @@
   <script>
     let state = JSON.parse(localStorage.getItem('bd_data')) || {
       event: "2026年4月羽毛球赛",
-      tiers: {
-        A: ["张三", "李四", "王五", "赵六", "钱七", "孙八", "周九", "吴十"],
-        B: ["甲一", "甲二", "甲三", "甲四", "甲五", "甲六", "甲七", "甲八"],
-        C: ["乙一", "乙二", "乙三", "乙四", "乙五", "乙六", "乙七", "乙八"],
-        D: ["丙一", "丙二", "丙三", "丙四", "丙五", "丙六", "丙七", "丙八"],
-        E: ["丁一", "丁二", "丁三", "丁四", "丁五", "丁六", "丁七", "丁八"]
-      },
+      tiers: { A: ["","","","","","","",""], B: ["","","","","","","",""], C: ["","","","","","","",""], D: ["","","","","","","",""], E: ["","","","","","","",""] },
       fixedTeams: []
     };
     let currentView = 'home';
     let drawResult = null;
+    let isDrawing = false;
 
     function save() { localStorage.setItem('bd_data', JSON.stringify(state)); }
 
     function render() {
       const app = document.getElementById('app');
+      app.innerHTML = '';
       if(currentView === 'home') renderHome(app);
       else if(currentView === 'login') renderLogin(app);
       else if(currentView === 'admin') renderAdmin(app);
     }
 
     function renderHome(app) {
-      let content = `
+      app.innerHTML = `
         <div class="flex justify-between items-center mb-8">
-          <h1 class="text-2xl font-bold">${state.event}</h1>
-          <button onclick="currentView='login';render()" class="text-sm text-gray-500 hover:text-indigo-600">管理员登录</button>
+          <h1 class="text-3xl font-bold text-gray-800">${state.event}</h1>
+          <button onclick="currentView='login';render()" class="text-sm bg-gray-200 px-3 py-1 rounded-full">管理员</button>
         </div>
-        <button onclick="startDraw()" class="w-full py-4 bg-indigo-600 text-white rounded-xl text-lg font-bold mb-6">🎲 开始抽签</button>
+        <button id="drawBtn" onclick="startDraw()" class="w-full py-6 bg-indigo-600 text-white rounded-2xl text-2xl font-bold shadow-lg hover:bg-indigo-700 transition">🎲 开始抽签</button>
+        <div id="resultArea" class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4"></div>
       `;
-      if(drawResult) {
-        content += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">` + drawResult.map((t, i) => `
-          <div class="bg-white p-4 rounded-xl shadow">
-            <h3 class="font-bold text-indigo-600 mb-2">队伍 ${i+1}</h3>
-            ${t.map(p => `<span class="inline-block bg-gray-100 rounded px-2 py-1 m-1 text-sm">${p}</span>`).join('')}
-          </div>
-        `).join('') + `</div>`;
-      }
-      app.innerHTML = content;
+      if(drawResult) showResult();
+    }
+
+    function startDraw() {
+      const btn = document.getElementById('drawBtn');
+      btn.innerText = "🎲 抽签中...";
+      btn.classList.add('draw-anim');
+      isDrawing = true;
+      
+      setTimeout(() => {
+        let teams = Array.from({length: 8}, () => []);
+        let pool = JSON.parse(JSON.stringify(state.tiers));
+        
+        // 简单抽签逻辑：每梯队均分
+        Object.keys(pool).forEach(t => {
+          let members = pool[t].filter(m => m.trim() !== "").sort(() => Math.random() - 0.5);
+          members.forEach((m, i) => teams[i % 8].push(m));
+        });
+        
+        drawResult = teams;
+        btn.innerText = "🎲 开始抽签";
+        btn.classList.remove('draw-anim');
+        isDrawing = false;
+        showResult();
+      }, 1500);
+    }
+
+    function showResult() {
+      const area = document.getElementById('resultArea');
+      if(!area) return;
+      area.innerHTML = drawResult.map((t, i) => `
+        <div class="bg-white p-4 rounded-xl shadow border-l-4 border-indigo-500">
+          <h3 class="font-bold text-indigo-800 mb-2 border-b pb-1">第 ${i+1} 队</h3>
+          <div class="text-gray-600">${t.map(p => `<span class="inline-block bg-indigo-50 text-indigo-700 rounded-full px-3 py-1 m-1 text-sm">${p}</span>`).join('')}</div>
+        </div>
+      `).join('');
     }
 
     function renderLogin(app) {
       app.innerHTML = `
-        <div class="bg-white p-8 rounded-2xl shadow-lg max-w-sm mx-auto">
+        <div class="bg-white p-8 rounded-2xl shadow-lg max-w-sm mx-auto mt-20">
           <h2 class="text-xl font-bold mb-4">管理员登录</h2>
-          <input id="user" placeholder="用户名" class="w-full border p-2 mb-2 rounded">
-          <input id="pass" type="password" placeholder="密码" class="w-full border p-2 mb-4 rounded">
-          <div class="flex gap-2">
-            <button onclick="currentView='home';render()" class="flex-1 bg-gray-200 py-2 rounded">取消</button>
-            <button onclick="login()" class="flex-1 bg-indigo-600 text-white py-2 rounded">登录</button>
-          </div>
+          <input id="user" placeholder="用户名" class="w-full border p-3 mb-2 rounded-xl">
+          <input id="pass" type="password" placeholder="密码" class="w-full border p-3 mb-4 rounded-xl">
+          <button onclick="login()" class="w-full bg-indigo-600 text-white py-3 rounded-xl">登录</button>
+          <button onclick="currentView='home';render()" class="w-full mt-2 text-gray-500">返回首页</button>
         </div>
       `;
     }
@@ -76,38 +102,22 @@
         <div class="bg-white p-6 rounded-2xl shadow-lg">
           <div class="flex justify-between mb-6">
             <h2 class="text-xl font-bold">后台管理</h2>
-            <button onclick="currentView='home';render()" class="text-red-500">退出</button>
+            <button onclick="currentView='home';render()" class="text-gray-500">返回</button>
           </div>
-          <div class="space-y-6">
-            <div>
-              <h3 class="font-bold mb-2">人员配置 (梯队)</h3>
-              ${Object.keys(state.tiers).map(t => `
-                <div class="mb-2">
-                  <label class="font-bold">${t}:</label>
-                  <input value="${state.tiers[t].join(',')}" onchange="updateTiers('${t}', this.value)" class="w-full border p-2 rounded text-sm">
-                </div>
-              `).join('')}
-            </div>
+          <div class="space-y-4">
+            ${Object.keys(state.tiers).map(t => `
+              <div>
+                <label class="block font-bold mb-1">梯队 ${t}</label>
+                <textarea onchange="updateTier('${t}', this.value)" class="w-full border p-2 rounded-lg text-sm" rows="2">${state.tiers[t].join(', ')}</textarea>
+              </div>
+            `).join('')}
           </div>
+          <button onclick="save();alert('已保存！');currentView='home';render()" class="w-full mt-6 py-3 bg-green-600 text-white rounded-xl">保存配置并生效</button>
         </div>
       `;
     }
 
-    function updateTiers(t, val) { state.tiers[t] = val.split(','); save(); }
-
-    function startDraw() {
-      let teams = Array.from({length: 8}, () => []);
-      let pool = JSON.parse(JSON.stringify(state.tiers));
-      
-      // 随机化各梯队人选
-      Object.keys(pool).forEach(t => {
-        let members = pool[t].sort(() => Math.random() - 0.5);
-        members.forEach((m, i) => teams[i].push(m));
-      });
-      
-      drawResult = teams;
-      render();
-    }
+    function updateTier(t, val) { state.tiers[t] = val.split(',').map(s => s.trim()); }
 
     render();
   </script>
