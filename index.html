@@ -186,6 +186,7 @@
       const teams = Array.from({ length: 8 }, () => []);
       const used = new Set();
       const tierByName = {};
+      const randomizedTeamSlots = shuffle([0, 1, 2, 3, 4, 5, 6, 7]);
 
       Object.entries(state.tiers).forEach(([tier, members]) => {
         members.forEach(name => {
@@ -194,7 +195,7 @@
       });
 
       state.fixedPairs.forEach((group, index) => {
-        const teamIndex = index % 8;
+        const teamIndex = randomizedTeamSlots[index % randomizedTeamSlots.length];
         const tierUsedInGroup = new Set();
         group.members.forEach(name => {
           const tier = tierByName[name];
@@ -216,7 +217,9 @@
             const hasTier = team.some(member => tierByName[member] === tier);
             if (!hasTier) candidate.push(t);
           }
-          const teamIndex = candidate.length ? candidate.sort((a, b) => teams[a].length - teams[b].length)[0] : teams.map((team, idx) => ({ idx, len: team.length })).sort((a, b) => a.len - b.len)[0].idx;
+          const teamIndex = candidate.length
+            ? candidate.sort((a, b) => teams[a].length - teams[b].length)[0]
+            : teams.map((team, idx) => ({ idx, len: team.length })).sort((a, b) => a.len - b.len)[0].idx;
           teams[teamIndex].push(name);
           used.add(name);
         }
