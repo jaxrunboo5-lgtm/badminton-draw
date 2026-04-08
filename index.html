@@ -11,57 +11,88 @@
   </style>
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800">
-  <div class="max-w-6xl mx-auto p-4 md:p-6">
-    <header class="text-center mb-8">
-      <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">🏸 羽毛球队伍抽签</h1>
-      <p class="text-slate-500 mt-2">公平、随机、一键分队</p>
-    </header>
-
-    <button id="drawBtn" onclick="startDraw()" class="w-full max-w-lg mx-auto block py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xl font-bold shadow-xl transition-all active:scale-95">🎲 开始随机抽签</button>
-
-    <div id="result" class="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <!-- 抽签结果卡片 -->
-    </div>
-  </div>
+  <div id="app" class="max-w-6xl mx-auto p-4 md:p-6"></div>
 
   <script>
-    const data = {
-      tiers: {
-        A: ["张三", "李四", "王五", "赵六", "钱七", "孙八", "周九", "吴十"],
-        B: ["甲一", "甲二", "甲三", "甲四", "甲五", "甲六", "甲七", "甲八"],
-        C: ["乙一", "乙二", "乙三", "乙四", "乙五", "乙六", "乙七", "乙八"],
-        D: ["丙一", "丙二", "丙三", "丙四", "丙五", "丙六", "丙七", "丙八"],
-        E: ["丁一", "丁二", "丁三", "丁四", "丁五", "丁六", "丁七", "丁八"]
-      }
+    let state = JSON.parse(localStorage.getItem('bd_data')) || {
+      event: "羽毛球赛",
+      tiers: { A: ["张三", "李四"], B: ["甲一", "甲二"], C: ["乙一", "乙二"], D: ["丙一", "丙二"], E: ["丁一", "丁二"] },
+      fixedPairs: [] 
     };
+    let currentView = 'home';
+
+    function save() { localStorage.setItem('bd_data', JSON.stringify(state)); }
+
+    function render() {
+      const app = document.getElementById('app');
+      app.innerHTML = '';
+      if(currentView === 'home') renderHome(app);
+      else if(currentView === 'login') renderLogin(app);
+      else if(currentView === 'admin') renderAdmin(app);
+    }
+
+    function renderHome(app) {
+      app.innerHTML = `
+        <header class="text-center mb-8">
+          <h1 class="text-3xl font-extrabold text-slate-900">${state.event}</h1>
+          <button onclick="currentView='login';render()" class="text-xs text-slate-400 mt-2">管理员后台</button>
+        </header>
+        <button id="drawBtn" onclick="startDraw()" class="w-full max-w-lg mx-auto block py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xl font-bold shadow-xl transition active:scale-95">🎲 开始抽签</button>
+        <div id="result" class="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+      `;
+    }
 
     function startDraw() {
       const btn = document.getElementById('drawBtn');
       const res = document.getElementById('result');
-      
       btn.classList.add('draw-anim');
       btn.innerText = "🎲 抽签运算中...";
       
       setTimeout(() => {
         let teams = Array.from({length: 8}, () => []);
-        Object.keys(data.tiers).forEach(t => {
-          let members = [...data.tiers[t]].sort(() => Math.random() - 0.5);
-          members.forEach((m, i) => teams[i % 8].push(m));
+        let used = new Set();
+        
+        state.fixedPairs.forEach((pair, i) => {
+          pair.members.forEach(m => { if(m) { teams[i%8].push(m); used.add(m); }});
+        });
+
+        Object.keys(state.tiers).forEach(t => {
+          state.tiers[t].filter(m => m && !used.has(m)).sort(() => Math.random() - 0.5)
+          .forEach((m, i) => { teams[i % 8].push(m); });
         });
         
         res.innerHTML = teams.map((t, i) => `
-          <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition">
-            <h3 class="font-bold text-indigo-600 mb-3 text-lg border-b pb-2">第 ${i+1} 队</h3>
-            <div class="space-y-1">
-              ${t.map(p => `<div class="text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg text-sm font-medium">${p}</div>`).join('')}
-            </div>
+          <div class="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100">
+            <h3 class="font-bold text-indigo-600 mb-3 border-b pb-2">第 ${i+1} 队</h3>
+            ${t.map(p => `<div class="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm mb-1">${p}</div>`).join('')}
           </div>
         `).join('');
-        
         btn.classList.remove('draw-anim');
-        btn.innerText = "🎲 开始随机抽签";
+        btn.innerText = "🎲 开始抽签";
       }, 1500);
     }
+
+    function renderLogin(app) {
+      app.innerHTML = `<div class="max-w-xs mx-auto mt-20 p-6 bg-white rounded-xl shadow"><input id="pass" type="password" class="border p-2 w-full mb-4"><button onclick="if(document.getElementById('pass').value==='admin123'){currentView='admin';render()}else{alert('错')}" class="w-full bg-indigo-600 text-white py-2 rounded">登录</button></div>`;
+    }
+
+    function renderAdmin(app) {
+      app.innerHTML = `
+        <div class="max-w-2xl mx-auto bg-white p-6 rounded-xl shadow">
+          <h2 class="font-bold mb-4">配置人员与固定队</h2>
+          ${Object.keys(state.tiers).map(t => `<div class="mb-2"><label class="block text-xs font-bold text-slate-500">梯队 ${t}</label><input value="${state.tiers[t].join(',')}" onchange="state.tiers['${t}']=this.value.split(',').map(s=>s.trim())" class="w-full border p-2 text-sm rounded"></div>`).join('')}
+          <label class="block text-xs font-bold text-slate-500 mt-4">固定组合 (每行一组,用逗号分)</label>
+          <textarea id="fixed" class="w-full border p-2 h-20 text-sm mb-4">${state.fixedPairs.map(p=>p.members.join(',')).join('\n')}</textarea>
+          <button onclick="saveAdmin()" class="w-full bg-green-600 text-white py-2 rounded">保存并回到首页</button>
+        </div>
+      `;
+    }
+
+    function saveAdmin() {
+      state.fixedPairs = document.getElementById('fixed').value.split('\n').filter(l=>l.trim()).map(l=>({members: l.split(',').map(s=>s.trim())}));
+      save(); currentView='home'; render();
+    }
+    render();
   </script>
 </body>
 </html>
