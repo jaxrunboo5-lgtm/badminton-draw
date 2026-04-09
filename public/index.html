@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>羽毛球队伍抽签</title>
+  <link rel="icon" href="data:," />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .draw-anim { animation: roll 0.18s ease-in-out infinite; }
+    .card-pop { animation: pop .35s ease-out both; }
+    @keyframes roll { 0%{transform:scale(1)} 50%{transform:scale(1.03)} 100%{transform:scale(1)} }
+    @keyframes pop { 0%{opacity:0;transform:translateY(10px) scale(.98)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800">
+  <div id="app" class="max-w-6xl mx-auto p-4 md:p-6"></div>
+  <script>
+    let currentView = 'home';
+    let cachedResult = null;
+    let cachedConfig = null;
+    let adminToken = null; // { username, password }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function api(url, body) {
+      const opts = body ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) } : {};
+      const res = await fetch(url, opts);
+      return res.json();
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      if (currentView === 'home') renderHome(app);
+      else if (currentView === 'login') renderLogin(app);
+      else if (currentView === 'admin') renderAdmin(app);
+    }
+
+    async function renderHome(app) {
+      app.innerHTML = '<div class="text-center py-10 text-slate-400">加载中...</div>';
+      const [configData, resultData] = await Promise.all([api('/api/config'), api('/api/result')]);
+      cachedResult = resultData;
+      cachedConfig = configData;
+
+      app.innerHTML = `
+        <header class="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">🏸 ${escapeHtml(configData.event || '羽毛球赛')}</h1>
+            <p class="text-slate-500 mt-2">支持手机和电脑，点击即可随机分队</p>
+          </div>
+          <button onclick="currentView='login';render()" class="self-start sm:self-auto text-sm bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 px-4 py-2 rounded-xl shadow-sm transition">管理员后台</button>
+        </header>
+        <section class="bg-white rounded-3xl shadow-sm border border-slate-200 p-5 md:p-6 mb-6">
+          <div class="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
+            <div>
+              <div class="text-sm text-slate-500">当前配置</div>
+              <div class="text-lg font-semibold mt-1">A-E 共 ${configData.totalPlayers || 0} 人参与抽签</div>
+              ${resultData.hasResult ? '<div class="text-xs text-slate-400 mt-1">最近抽签时间：' + escapeHtml(resultData.createdAt || '') + '</div>' : ''}
+            </div>
+            ${adminToken ? '<button id="drawBtn" onclick="doAdminDraw()" class="w-full lg:w-auto py-4 px-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-lg font-bold shadow-xl transition active:scale-95">🎲 开始抽签</button>' : ''}
+          </div>
+        </section>
+        <section id="result" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"></section>
+      `;
+
+      if (resultData.hasResult) {
+        renderTeams(resultData.teams);
+      } else {
+        renderPlaceholder();
+      }
+    }
+
+    function renderPlaceholder() {
+      document.getElementById('result').innerHTML = Array.from({length:8},(_,i) => `
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm min-h-[180px]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-slate-800">第 ${i+1} 队</h3>
+            <span class="text-xs text-slate-400">待抽签</span>
+          </div>
+          <div class="space-y-2">${Array.from({length:5},()=>'<div class="h-9 rounded-xl bg-slate-100"></div>').join('')}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderTeams(teams) {
+      document.getElementById('result').innerHTML = teams.map((team,i) => `
+        <div class="bg-white rounded-2xl border border-indigo-100 p-4 shadow-sm card-pop min-h-[180px]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-indigo-600 text-lg">第 ${i+1} 队</h3>
+            <span class="text-xs text-slate-400">${team.length} 人</span>
+          </div>
+          <div class="space-y-2">
+            ${team.length ? team.map(n=>`<div class="bg-indigo-50 text-indigo-700 px-3 py-2 rounded-xl text-sm font-medium">${escapeHtml(n)}</div>`).join('') : '<div class="text-sm text-slate-400">暂无成员</div>'}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function doAdminDraw() {
+      if (!adminToken) return alert('请先登录管理员');
+      const btn = document.getElementById('drawBtn');
+      btn.disabled = true; btn.classList.add('draw-anim'); btn.innerText = '🎲 抽签中...';
+
+      const result = document.getElementById('result');
+      let ticks = 0;
+      const timer = setInterval(() => {
+        result.innerHTML = Array.from({length:8},(_,i)=>`
+          <div class="bg-white rounded-2xl border border-indigo-100 p-4 shadow-sm min-h-[180px]">
+            <h3 class="font-bold text-indigo-600 mb-3">第 ${i+1} 队</h3>
+            <div class="space-y-2">${Array.from({length:5},()=>`<div class="h-9 rounded-xl bg-indigo-50 ${ticks%2?'opacity-60':''}"></div>`).join('')}</div>
+          </div>
+        `).join('');
+        ticks++;
+      }, 140);
+
+      const data = await api('/api/admin/draw', adminToken);
+      clearInterval(timer);
+      btn.disabled = false; btn.classList.remove('draw-anim'); btn.innerText = '🎲 重新抽签';
+
+      if (data.error) return alert(data.error);
+      renderTeams(data.teams);
+    }
+
+    function renderLogin(app) {
+      app.innerHTML = `
+        <div class="max-w-md mx-auto mt-10 md:mt-20 bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
+          <h2 class="text-2xl font-bold text-slate-900 mb-2">管理员登录</h2>
+          <p class="text-slate-500 text-sm mb-6">登录后可配置名单、执行抽签</p>
+          <div class="space-y-4">
+            <div><label class="block text-sm font-medium mb-2">用户名</label><input id="username" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-4 py-3" placeholder="请输入用户名" /></div>
+            <div><label class="block text-sm font-medium mb-2">密码</label><input id="password" type="password" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-4 py-3" placeholder="请输入密码" /></div>
+            <div class="flex gap-3 pt-2">
+              <button onclick="currentView='home';render()" class="flex-1 bg-slate-100 hover:bg-slate-200 rounded-xl py-3 font-medium transition">返回</button>
+              <button onclick="doLogin()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-3 font-medium transition">登录</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function doLogin() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const data = await api('/api/admin/config', { username, password });
+      if (data.error) return alert(data.error);
+      adminToken = { username, password };
+      cachedConfig = data;
+      currentView = 'admin';
+      render();
+    }
+
+    function renderAdmin(app) {
+      if (!cachedConfig || !adminToken) { currentView = 'login'; render(); return; }
+      const c = cachedConfig;
+      const fixedText = (c.fixedPairs || []).map(p => (p.members||[]).join(',')).filter(Boolean).join('\n');
+
+      app.innerHTML = `
+        <div class="flex items-center justify-between mb-6 gap-3">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900">管理员后台</h2>
+            <p class="text-slate-500 text-sm mt-1">配置名单和固定组后，点击保存即可生效</p>
+          </div>
+          <button onclick="adminToken=null;currentView='home';render()" class="bg-white border border-slate-200 hover:border-indigo-300 rounded-xl px-4 py-2 text-sm shadow-sm">退出登录</button>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <section class="xl:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-200 p-5 md:p-6">
+            <h3 class="text-lg font-bold mb-4">人员配置</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              ${['A','B','C','D','E'].map(t => `
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                  <label class="block text-sm font-bold text-slate-700 mb-2">梯队 ${t}</label>
+                  <textarea id="tier-${t}" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-3 py-3 text-sm min-h-[96px]" placeholder="多个名字用逗号分隔">${escapeHtml((c.tiers[t]||[]).join(','))}</textarea>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+          <section class="bg-white rounded-3xl shadow-sm border border-slate-200 p-5 md:p-6">
+            <h3 class="text-lg font-bold mb-4">固定组队</h3>
+            <textarea id="fixed" class="w-full border border-slate-300 focus:border-indigo-500 focus:outline-none rounded-xl px-3 py-3 text-sm min-h-[260px]" placeholder="每行一组，组内人名用逗号分隔">${escapeHtml(fixedText)}</textarea>
+            <p class="text-xs text-slate-400 mt-3 leading-5">规则：每行是一组固定队友；同梯队重复只取第一个。</p>
+            <button onclick="doSaveConfig()" class="w-full mt-5 bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 text-sm font-medium">保存配置</button>
+          </section>
+        </div>
+      `;
+    }
+
+    async function doSaveConfig() {
+      const tiers = {};
+      ['A','B','C','D','E'].forEach(t => {
+        const el = document.getElementById('tier-'+t);
+        tiers[t] = (el?.value||'').split(',').map(v=>v.trim()).filter(Boolean);
+      });
+      const fixedRaw = document.getElementById('fixed')?.value || '';
+      const fixedPairs = fixedRaw.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>({members:l.split(',').map(s=>s.trim()).filter(Boolean)})).filter(g=>g.members.length>=2);
+
+      const data = await api('/api/admin/save', { ...adminToken, tiers, fixedPairs });
+      if (data.error) return alert(data.error);
+      alert('已保存');
+      currentView = 'home';
+      render();
+    }
+
+    render();
+  </script>
+</body>
+</html>
